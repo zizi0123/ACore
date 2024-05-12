@@ -1,0 +1,12 @@
+# os/.cargo/config
+
+[build]
+target = "riscv64gc-unknown-none-elf"
+
+#使用自己的链接脚本 os/src/linker.ld 而非使用默认的内存布局,以保证内核第一条指令的地址位于 0x80200000 
+#强制打开 fp 选项，避免 fp 相关指令被编译器优化掉
+[target.riscv64gc-unknown-none-elf]
+rustflags = [
+    "-Clink-args=-Tsrc/linker.ld", "-Cforce-frame-pointers=yes"
+]
+
