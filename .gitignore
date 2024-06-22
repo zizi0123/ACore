@@ -1,3 +1,6 @@
 /kernel/target/
+/kernel/build
 /user/target/
+/user/output_*
 /.vscode/
+/kernel/core

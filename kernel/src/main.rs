@@ -19,30 +19,26 @@ extern crate lazy_static;
 mod lang_items;
 mod sbi;
 mod uart;
-mod processor;
 mod config;
 mod mem;
-mod sync;
 mod syscall;
 mod trap;
+mod process;
+mod time;
 
 
 //将汇编代码 entry.asm 转化为字符串并通过 global_asm! 宏嵌入到代码中
-use core::{arch::global_asm, ptr::{read_volatile, write_volatile}};
+use core::arch::global_asm;
 //使用第三方包 riscv 提供的寄存器定义
 use riscv::register::*;
+use process::{process_manager, scheduler};
 use core::arch::asm;
-use config::INTERRUPT_PERIOD;
-use crate::mem::{address_space::KERNEL_SPACE, allocator::*, frame_allocator::init_frame_allocator};
-use crate::mem::frame_allocator::frame_allocator_test;
-use crate::mem::address_space::AddressSpace;
+use process::loader;
 
-const MTIME :usize = 0x0200bff8;
-const MTIMECMP :usize = 0x02004000;
 
 global_asm!(include_str!("entry.asm")); 
-global_asm!(include_str!("time_interrupt/handler.asm"));
-
+// global_asm!(include_str!("time/handler.asm"));
+global_asm!(include_str!("link_app.S"));
 
 
 #[no_mangle]
@@ -64,6 +60,7 @@ unsafe fn rust_start() -> ! {
         );
 
     //set S mode interruption enable
+    //sstatus.sie is not set, so trap can not happen in S-mode, but can interrupt into S-mode when in U-mode. 
     sie::set_sext(); //enable external interrupt
     sie::set_stimer(); //enable time interrupt
     sie::set_ssoft(); //enable soft interrupt
@@ -72,28 +69,7 @@ unsafe fn rust_start() -> ! {
     pmpaddr0::write(0x3fffffffffffff);
     pmpcfg0::write(0xf);
     
-    //set time interrupt interval
-    let hartid = processor::hartid();
-    let mtime = (MTIME) as *mut usize;
-    let timenow = read_volatile(mtime);
-    let mtimecmp = (MTIMECMP + 8 * hartid) as *mut usize;
-    write_volatile(mtimecmp, timenow + INTERRUPT_PERIOD);
-
-
-    //set the entry address of time interrupt handler
-    //function _time_int_handler is defined in handler.s
-    //set mode as direct, all exceptions set pc to BASE.
-    //attention why the handler func has to be asm?
-    extern "C" {
-        fn _time_int_handler();
-    }
-    mtvec::write(_time_int_handler as usize, mtvec::TrapMode::Direct);
-
-    //enable M mode time interrupt
-    mstatus::set_mie();
-
-    //enable time interrupt
-    mie::set_mtimer();
+    // time::init();
 
     //switch to S mode
     asm!("mret", options(noreturn));
@@ -101,21 +77,22 @@ unsafe fn rust_start() -> ! {
 
 #[no_mangle] //告诉编译器不要更改函数名称
 extern "C" fn rust_main() -> ! {
+    // .bss 段用于存放未初始化的全局变量，在程序开始运行前需要由操作系统清零
     clear_bss();
-    println!("Hello, world!");
-    
-    init_heap_allocator();
 
-    // heap_test();
+    println!("[kernel] Hello, world!");
 
-    init_frame_allocator();
+    trap::init();
 
-    // frame_allocator_test();
+    mem::init();
 
-    KERNEL_SPACE.exclusive_access().test_space();
+    process_manager::init();
+
+    loader::init();
+
+    scheduler::init();
 
     panic!("Shutdown machine!");
-
 
 }
 

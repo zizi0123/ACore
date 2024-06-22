@@ -12,6 +12,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "allocator"
+version = "0.1.0"
+dependencies = [
+ "sync",
+]
+
+[[package]]
 name = "bare-metal"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -66,11 +73,13 @@ checksum = "6c8640c5d730cb13ebd907d8d04b52f55ac9a2eec55b440c8892f40d56c76c1d"
 name = "os"
 version = "0.1.0"
 dependencies = [
+ "allocator",
  "bitflags",
  "buddy_system_allocator",
  "lazy_static",
  "riscv",
  "sbi-rt",
+ "sync",
  "xmas-elf",
 ]
 
@@ -184,6 +193,10 @@ name = "static_assertions"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
+
+[[package]]
+name = "sync"
+version = "0.1.0"
 
 [[package]]
 name = "xmas-elf"

@@ -1,6 +1,6 @@
 use super::page_table::*;
 use crate::config::*;
-use crate::sync::*;
+use sync::UPSafeCell;
 use alloc::vec::Vec;
 use core::fmt::{self, Debug, Formatter};
 use lazy_static::lazy_static;
@@ -35,8 +35,8 @@ impl FrameAllocator for StackFrameAllocator {
                 println!("FrameAllocator: no available frame!");
                 return None;
             } else {
+                result = Some(PPN(self.start.0));
                 self.start.0 += 1;
-                result = Some(PPN(self.start.0 - 1));
             }
         }
         let ppn = result.unwrap();
@@ -73,7 +73,6 @@ pub struct FrameTracker {
 
 impl FrameTracker {
     pub fn new(ppn: PPN) -> Self {
-        //todo page cleaning  why????
         Self { ppn }
     }
 }
@@ -98,7 +97,7 @@ lazy_static! {
 
 pub fn init_frame_allocator() {
     extern "C" {
-        fn ekernel(); //the end of kernel space get from linker
+        fn ekernel(); 
     }
     let start = (PhyAddr::from(ekernel as usize)).to_up_ppn();
     let end = (PhyAddr::from(MEMORY_END as usize)).to_down_ppn();
@@ -118,7 +117,6 @@ pub fn frame_allocator_test() {
     let mut v: Vec<FrameTracker> = Vec::new();
     for i in 0..5 {
         let frame = alloc_frame().unwrap();
-        println!("{:?}", frame);
         v.push(frame);
     }
     v.clear();

@@ -3,5 +3,19 @@
 version = 3
 
 [[package]]
+name = "allocator"
+version = "0.1.0"
+dependencies = [
+ "sync",
+]
+
+[[package]]
+name = "sync"
+version = "0.1.0"
+
+[[package]]
 name = "user_lib"
 version = "0.1.0"
+dependencies = [
+ "allocator",
+]

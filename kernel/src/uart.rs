@@ -1,9 +1,4 @@
-const UART_BASE: u64 = 0x1000_0000;
-const RBR: u64 = 0x00;
-const THR: u64 = 0x00;
-const IER: u64 = 0x01;
-const FCR: u64 = 0x02;
-
+use crate::config::{FCR, LSR, RBR, THR, UART_BASE};
 
 macro_rules! Reg {
     ($reg:expr) => {
@@ -32,6 +27,11 @@ pub fn console_putchar(c: usize) {
     write_reg!(THR, c as u8);
 }
 
+// return zero if no more bytes are present.
 pub fn console_getchar() -> u8 {
+    let tmp = 0x01;
+    if read_reg!(LSR) & tmp == 0{
+        return 0;
+    }
     return read_reg!(RBR);
 }

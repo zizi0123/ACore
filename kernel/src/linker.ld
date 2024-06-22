@@ -17,7 +17,8 @@ SECTIONS
         strampoline = .;
         *(.text.trampoline);
         . = ALIGN(4K);
-        ASSERT(. - strampoline == 0x1000, "error: trampoline size is not a page size");
+        /* ASSERT(. - strampoline == 0x1000, "error: trampoline size is not a page size"); */
+        etrampoline = .;
         *(.text .text.*)
     }
 

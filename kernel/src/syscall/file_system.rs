@@ -1,16 +1,48 @@
-// 功能：将内存中缓冲区中的数据写入文件。
-// 参数：`fd` 表示待写入文件的文件描述符；
-//      `buf` 表示内存中缓冲区的起始地址；
-//      `len` 表示内存中缓冲区的长度。
-// 返回值：返回成功写入的长度。
-// syscall ID：64
-pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> isize { //only support stdout now
-    if fd == 1 {
-        let slice = unsafe { core::slice::from_raw_parts(buf, len) };
-        let str = core::str::from_utf8(slice).unwrap();
-        print!("{}", str);
-        return len as isize
-    } else {
-        panic!("Unsupported fd in sys_write!");
+use crate::mem::page_table::get_bytes;
+use crate::sbi;
+use crate::process::scheduler::{get_current_satp, suspend_current_and_run_next};
+use crate::config::{FD_STDOUT, FD_STDIN};
+
+// return the number of bytes written successfully
+pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> isize {
+    match fd {
+        FD_STDOUT => {
+            let buffers = get_bytes(get_current_satp(), buf, len);
+            for buffer in buffers {
+                print!("{}", core::str::from_utf8(buffer).unwrap());
+            }
+            len as isize
+        },
+        _ => {
+            panic!("Unsupported fd in sys_write!");
+        }
+    }
+}
+
+// only support read from stdin, len = 1
+pub fn sys_read(fd: usize, buf: *mut u8, len: usize) -> isize {
+    match fd {
+        FD_STDIN => {
+            assert_eq!(len, 1, "Only support len = 1 in sys_read!");
+            let mut c: u8;
+            loop { // busy waiting until a byte is read
+                c = sbi::console_getchar();
+                if c == 0 { // no input
+                    panic!("No input in sys_read!");
+                    suspend_current_and_run_next();
+                    continue;
+                } else {
+                    break;
+                }
+            }
+            let mut buffers = get_bytes(get_current_satp(), buf, len);
+            unsafe {
+                buffers[0].as_mut_ptr().write_volatile(c);
+            }
+            return 1
+        }
+        _ => {
+            panic!("Unsupported fd in sys_read!");
+        }
     }
 }

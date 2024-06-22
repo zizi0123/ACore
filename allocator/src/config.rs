@@ -1,0 +1,1 @@
+pub const BUDDY_ALLOCATOR_ORDER_SIZE: usize = 32;

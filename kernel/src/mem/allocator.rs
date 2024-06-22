@@ -1,19 +1,14 @@
-use crate::mem::heap_allocator::GlobalBuddyAllocator;
+use allocator::GlobalBuddyAllocator;
 use crate::config::*;
 
-
-
-
+// the memory space for kernel heap, in .bss section
 static mut HEAP_SPACE: [u8; KERNEL_HEAP_SIZE] = [0; KERNEL_HEAP_SIZE];
 
 //implement global allocator traits to allow use of alloc crate
 #[global_allocator]
-static HEAP_ALLOCATOR: GlobalBuddyAllocator = unsafe {
+static KERNEL_HEAP_ALLOCATOR: GlobalBuddyAllocator = unsafe {
     GlobalBuddyAllocator::new(KERNEL_HEAP_SIZE, KERNEL_HEAP_GRANULARITY)
 };
-
-
-
 
 #[alloc_error_handler]
 /// panic when heap allocation error occurs
@@ -23,11 +18,10 @@ pub fn handle_alloc_error(layout: core::alloc::Layout) -> ! {
 
 
 pub fn init_heap_allocator() {
-    println!("start init heap!");
-
+    println!("start init kernel heap!");
     unsafe {
-        println!("heap start: {:x}, size: {:x}", HEAP_SPACE.as_ptr() as usize, KERNEL_HEAP_SIZE);
-        HEAP_ALLOCATOR.init(HEAP_SPACE.as_ptr() as usize, KERNEL_HEAP_SIZE);
+        println!("heap start: {:#x}, end: {:#x}", HEAP_SPACE.as_ptr() as usize, KERNEL_HEAP_SIZE + HEAP_SPACE.as_ptr() as usize);
+        KERNEL_HEAP_ALLOCATOR.init(HEAP_SPACE.as_ptr() as usize, KERNEL_HEAP_SIZE);
     }
 }
 
