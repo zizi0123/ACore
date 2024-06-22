@@ -10,7 +10,6 @@ use crate::process::loader::open_app_file;
 use crate::config::{GREEN, RED, RESET};
 
 pub fn sys_fork() -> isize {
-    println!("{}[kernel] fork a new process{}", GREEN, RESET);
     let current_task = get_current_task();
     let new_task = current_task.fork();
     let new_pid = new_task.get_pid();
@@ -29,9 +28,9 @@ pub fn sys_fork() -> isize {
 pub fn sys_exec(path: *const u8) -> isize {
     let satp = get_current_satp();
     let app_name = page_table::get_string(satp, path);
-    println!("{}[kernel] exec app: {}{}", RED, app_name, RESET);
     if let Some(data) = open_app_file(app_name.as_str()) {
         let task = get_current_task();
+        println!("{}[kernel] exec app: {}, pid = {}{}", GREEN, app_name, task.pid.0, RESET);
         task.exec(data);
         0
     } else {
@@ -74,7 +73,6 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
 }
 
 pub fn sys_exit(exit_code: i32) -> ! {
-    println!("[kernel] Application exited with code {}", exit_code);
     exit_current_and_run_next(exit_code);
     panic!("Unreachable in sys_exit!");
 }

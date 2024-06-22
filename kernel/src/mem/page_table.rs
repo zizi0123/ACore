@@ -189,11 +189,11 @@ impl PageTable {
         let mut frames = Vec::new();
         let root_frame = alloc_frame().unwrap();
         let root_ppn = root_frame.ppn;
-        println!(
-            "alloc frame {} at ppn: {:#x} for root",
-            frames.len() + 1,
-            root_ppn.0
-        );
+        // println!(
+        //     "alloc frame {} at ppn: {:#x} for root",
+        //     frames.len() + 1,
+        //     root_ppn.0
+        // );
         frames.push(root_frame);
         Self { root_ppn, frames }
     }

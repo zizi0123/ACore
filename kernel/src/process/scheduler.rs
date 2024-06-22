@@ -4,7 +4,7 @@ use crate::trap::TrapContext;
 use crate::sbi;
 use super::switch::__switch;
 use super::process_manager::{fetch_ready_task, add_task};
-use super::{context::TaskContext, process_control_block::{ProcessControlBlock, TaskStatus, INITPROC}};
+use super::{context::TaskContext, process_control_block::{ProcessControlBlock, ProcessStatus, INITPROC}};
 
 const EMPTY_PID: usize = 0;
 
@@ -52,21 +52,20 @@ fn switch_out(switched_task_cx_ptr: *mut TaskContext) {
 // when a task was switched out, the empty task will be switched in, and start to run this function, begin the next loop. 
 pub fn init() {
     loop {
-        println!("scheduler loop");
         let mut scheduler = SCHEDULER.exclusive_access();
         if let Some(task) = fetch_ready_task() {
             let idle_task_cx_ptr = scheduler.get_empty_task_cx_ptr();
             // access coming task TCB exclusively
             let mut task_inner = task.inner.exclusive_access();
             let next_task_cx_ptr = &task_inner.task_ctx as *const TaskContext;
-            task_inner.task_status = TaskStatus::Running;
+            task_inner.status = ProcessStatus::Running;
             drop(task_inner);
             // release coming task TCB manually
             scheduler.current = Some(task);
             // release scheduler manually
             drop(scheduler);
 
-            
+
             unsafe {
                 __switch(idle_task_cx_ptr, next_task_cx_ptr);
             }
@@ -78,15 +77,15 @@ pub fn suspend_current_and_run_next() {
     let task = SCHEDULER.exclusive_access().take_current().unwrap();
     let mut task_inner = task.inner.exclusive_access();
     let task_cx_ptr = &mut task_inner.task_ctx as *mut TaskContext;
-    task_inner.task_status = TaskStatus::Ready;
+    task_inner.status = ProcessStatus::Ready;
     drop(task_inner);
     add_task(task); // add it back to ready queue
     switch_out(task_cx_ptr);
 }
 
 pub fn exit_current_and_run_next(exit_code: i32) {
-    let task = SCHEDULER.exclusive_access().take_current().unwrap();
-    let pid = task.get_pid();
+    let cur_pcb = SCHEDULER.exclusive_access().take_current().unwrap();
+    let pid = cur_pcb.get_pid();
 
     // maybe the empty task is exiting, we should shutdown the system
     if pid == EMPTY_PID {
@@ -102,23 +101,24 @@ pub fn exit_current_and_run_next(exit_code: i32) {
     }
 
     // mark the task as exited
-    let mut task_inner = task.inner.exclusive_access();
-    task_inner.task_status = TaskStatus::Exited;
-    task_inner.exit_code = exit_code;
+    let mut cur_pcb_inner = cur_pcb.inner.exclusive_access();
+    cur_pcb_inner.status = ProcessStatus::Exited;
+    cur_pcb_inner.exit_code = exit_code;
 
     // add parent of current task's children to INITPROC
     let mut initproc_inner = INITPROC.inner.exclusive_access();
-    for child in task_inner.children.iter() {
+    for child in cur_pcb_inner.children.iter() {
         child.inner.exclusive_access().parent = Some(Arc::downgrade(&INITPROC)); // downgrade to Weak, won't add ref count
         initproc_inner.children.push(child.clone()); // clone to add ref count
     }
+    drop(initproc_inner);
 
     // release resources
-    task_inner.children.clear();
-    task_inner.address_space.clear();
+    cur_pcb_inner.children.clear();
+    cur_pcb_inner.address_space.clear();
 
-    drop(task_inner);
-    drop(task); // drop task manually to maintain rc correctly
+    drop(cur_pcb_inner);
+    drop(cur_pcb); // drop task manually to maintain rc correctly
 
     // switch from a 'new' empty to the 'special' empty process
     let mut new_empty = TaskContext::empty();

@@ -123,10 +123,10 @@ impl AddressSpace {
         data: Option<&[u8]>,
     ) {
         let mut section = Section::new(start, end, permisson, map_type);
-        println!(
-            "new section va range: [{:#x}, {:#x})",
-            start.0, end.0
-        );
+        // println!(
+        //     "new section va range: [{:#x}, {:#x})",
+        //     start.0, end.0
+        // );
         for vpn in section.start..section.end {
             match map_type {
                 MapType::Identical => {
@@ -392,7 +392,7 @@ pub fn kernel_space() -> AddressSpace {
     );
 
     //map IO space
-    print!("map IO space! ");
+    // print!("map IO space! ");
     for pair in MM_DERICT_MAP {
         kernel_space.add_section(
             pair.0.into(),
@@ -401,9 +401,7 @@ pub fn kernel_space() -> AddressSpace {
             MapType::Identical,
             None,
         );
-        print!(" [{:#x}, {:#x})", pair.0, pair.0 + pair.1 - 1);
     }
-    print!("\n");
 
     // kernel stack is allocated for each app when creating a new task
 
@@ -415,9 +413,8 @@ pub fn kernel_space() -> AddressSpace {
 // build user space from elf data
 // return user space, user stack start address, and entry point of elf
 pub fn user_space_from_elf(elf_data: &[u8]) -> (AddressSpace, VirtAddr, usize) {
+    // println!("start build a user space!");
     let mut user_space = AddressSpace::new();
-
-    println!("start build a user space!");
 
     //map trampoline to the highest page
     user_space.map_trampoline();
@@ -466,7 +463,7 @@ pub fn user_space_from_elf(elf_data: &[u8]) -> (AddressSpace, VirtAddr, usize) {
 
     // add stack
     let user_stack_end = VirtAddr::from(user_stack_start.0 + USER_STACK_SIZE);
-    println!("add stack");
+    // println!("add stack");
     user_space.add_section(
         user_stack_start,
         user_stack_end,
@@ -478,7 +475,7 @@ pub fn user_space_from_elf(elf_data: &[u8]) -> (AddressSpace, VirtAddr, usize) {
     // add heap
     let user_heap_start = user_stack_end;
     let user_heap_end = user_heap_start;
-    println!("add heap");
+    // println!("add heap");
     user_space.add_section(
         user_heap_start,
         user_heap_end,
@@ -488,7 +485,7 @@ pub fn user_space_from_elf(elf_data: &[u8]) -> (AddressSpace, VirtAddr, usize) {
     );
 
     // add trap context
-    println!("add trap context");
+    // println!("add trap context");
     user_space.add_trap_context();
 
     return (
@@ -499,10 +496,10 @@ pub fn user_space_from_elf(elf_data: &[u8]) -> (AddressSpace, VirtAddr, usize) {
 }
 
 pub fn copy_address_space(parent_address_space: &AddressSpace) -> AddressSpace {
-    println!("start copy address space!");
+    // println!("start copy address space!");
     let mut address_space = AddressSpace::new();
     address_space.map_trampoline();
-    println!("finish map trampoline");
+    // println!("finish map trampoline");
     for section in parent_address_space.sections.iter() {
         let new_section = copy_section(section, &mut address_space);
         address_space.sections.push(new_section);

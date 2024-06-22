@@ -10,7 +10,7 @@ use alloc::vec::Vec;
 use sync::UPSafeCell;
 
 #[derive(Copy, Clone, PartialEq)]
-pub enum TaskStatus {
+pub enum ProcessStatus {
     Ready,   // 准备运行 （当程序被加载入内存初始化时，它的初始状态即为Ready）
     Running, // 正在运行
     Exited,  // 已退出
@@ -26,7 +26,7 @@ pub struct ProcessControlBlock {
 
 // to implement inner mutability of a immutable reference
 pub struct ProcessControlBlockInner {
-    pub task_status: TaskStatus,
+    pub status: ProcessStatus,
     pub task_ctx: TaskContext,
     pub trap_ctx_ppn: PPN,
     pub address_space: AddressSpace,
@@ -65,7 +65,7 @@ impl ProcessControlBlock {
                     heap_bottom: user_sp.into(),
                     program_brk: user_sp.into(),
                     task_ctx: task_context,
-                    task_status: TaskStatus::Ready,
+                    status: ProcessStatus::Ready,
                     address_space: user_space,
                     parent: None,
                     children: Vec::new(),
@@ -121,7 +121,7 @@ impl ProcessControlBlock {
                     heap_bottom: parent_inner.heap_bottom,
                     program_brk: parent_inner.program_brk,
                     task_ctx: child_task_context,
-                    task_status: TaskStatus::Ready,
+                    status: ProcessStatus::Ready,
                     address_space: child_address_space,
                     parent: Some(Arc::downgrade(self)),
                     children: Vec::new(),
@@ -189,7 +189,7 @@ impl ProcessControlBlockInner {
     }
 
     pub fn has_exited(&self) -> bool {
-        return self.task_status == TaskStatus::Exited
+        return self.status == ProcessStatus::Exited
     }
 
     /// change the location of the program break. return None if failed.

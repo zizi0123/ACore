@@ -48,7 +48,6 @@ pub struct PidWrapper(pub usize);
 impl Drop for PidWrapper {
     // enable auto deallocation
     fn drop(&mut self) {
-        println!("drop pid {}", self.0);
         PID_ALLOCATOR.exclusive_access().dealloc(self.0);
     }
 }

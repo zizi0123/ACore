@@ -89,7 +89,6 @@ pub fn wait(exit_code: &mut i32) -> isize {
     loop { // busy waiting
         match sys_waitpid(-1, exit_code as *mut _) {
             -2 => { // child process is still running
-                println!("child process is still running, parent process yields");
                 yield_();
             }
             exit_pid => return exit_pid,
