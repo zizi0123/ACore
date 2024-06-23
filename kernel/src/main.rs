@@ -90,7 +90,7 @@ extern "C" fn rust_main() -> ! {
 
     loader::init();
 
-    scheduler::init();
+    scheduler::start_schedule();
 
     panic!("Shutdown machine!");
 

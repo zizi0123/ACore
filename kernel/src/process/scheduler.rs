@@ -21,7 +21,7 @@ impl Scheduler {
         }
     }
 
-    fn get_empty_task_cx_ptr(&mut self) -> *mut TaskContext {
+    fn get_empty_task_ctx_ptr(&mut self) -> *mut TaskContext {
         &mut self.empty_task_ctx as *mut TaskContext
     }
 
@@ -38,36 +38,35 @@ lazy_static! {
     pub static ref SCHEDULER: UPSafeCell<Scheduler> = unsafe { UPSafeCell::new(Scheduler::new()) };
 }
 
-fn switch_out(switched_task_cx_ptr: *mut TaskContext) {
+fn switch_out(switched_task_ctx_ptr: *mut TaskContext) {
     let mut scheduler = SCHEDULER.exclusive_access();
-    let idle_task_cx_ptr = scheduler.get_empty_task_cx_ptr();
+    let idle_task_ctx_ptr = scheduler.get_empty_task_ctx_ptr();
     drop(scheduler);
     unsafe {
-        __switch(switched_task_cx_ptr, idle_task_cx_ptr);
+        __switch(switched_task_ctx_ptr, idle_task_ctx_ptr);
     }
 }
 
 // build SCHEUDLER, and start the loop
 // continuously fetch a ready task, and switch from empty task to it.
 // when a task was switched out, the empty task will be switched in, and start to run this function, begin the next loop. 
-pub fn init() {
+pub fn start_schedule() {
     loop {
         let mut scheduler = SCHEDULER.exclusive_access();
-        if let Some(task) = fetch_ready_task() {
-            let idle_task_cx_ptr = scheduler.get_empty_task_cx_ptr();
+        if let Some(pcb) = fetch_ready_task() {
+            let idle_task_ctx_ptr = scheduler.get_empty_task_ctx_ptr();
             // access coming task TCB exclusively
-            let mut task_inner = task.inner.exclusive_access();
-            let next_task_cx_ptr = &task_inner.task_ctx as *const TaskContext;
-            task_inner.status = ProcessStatus::Running;
-            drop(task_inner);
+            let mut pcb_inner = pcb.inner.exclusive_access();
+            let next_task_ctx_ptr = &pcb_inner.task_ctx as *const TaskContext;
+            pcb_inner.status = ProcessStatus::Running;
+            drop(pcb_inner);
             // release coming task TCB manually
-            scheduler.current = Some(task);
+            scheduler.current = Some(pcb);
             // release scheduler manually
             drop(scheduler);
 
-
             unsafe {
-                __switch(idle_task_cx_ptr, next_task_cx_ptr);
+                __switch(idle_task_ctx_ptr, next_task_ctx_ptr);
             }
         }
     }

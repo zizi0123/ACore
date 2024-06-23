@@ -321,7 +321,7 @@ impl PageTable {
 }
 
 // from a start ptr get bytes with length len
-pub fn get_bytes(satp: usize, ptr: *const u8, len: usize) -> Vec<&'static mut [u8]> {
+pub fn physical_bytes_of_user_ptr(satp: usize, ptr: *const u8, len: usize) -> Vec<&'static mut [u8]> {
     let page_table = PageTable::new_from_satp(satp);
     let mut start = ptr as usize;
     let end = start + len;
