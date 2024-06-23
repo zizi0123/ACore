@@ -1,56 +1,91 @@
 use super::context::TaskContext;
-use super::pid::{pid_alloc, KernelStack, PidWrapper};
+use super::kernel_stack_alloc::KernelStack;
 use super::loader::open_app_file;
+use super::scheduler::init_process;
 use crate::config::TRAP_CONTEXT_START_VA;
 use crate::mem::address_space::{copy_address_space, user_space_from_elf, AddressSpace, KERNEL_SPACE};
 use crate::mem::page_table::{PhyAddr, VirtAddr, PPN};
 use crate::trap::{trap_handler, TrapContext};
-use alloc::sync::{Arc, Weak};
-use alloc::vec::Vec;
+use crate::config::{GREEN, RESET};
+use alloc::collections::BTreeMap;
+use alloc::sync::Arc;
 use sync::UPSafeCell;
 
-#[derive(Copy, Clone, PartialEq)]
-pub enum ProcessStatus {
-    Ready,   // 准备运行 （当程序被加载入内存初始化时，它的初始状态即为Ready）
-    Running, // 正在运行
-    Exited,  // 已退出
+pub fn init() {
+    add_task(INIT_TASK.get_pid(), INIT_TASK.clone());
+    println!("{}init process has been build and added to PM{}", GREEN, RESET);
 }
 
-pub struct ProcessControlBlock {
+pub fn add_task(pid: usize, task: Arc<TaskControlBlock>) {
+    TASK_MANAGER.exclusive_access().add_task(pid, task);
+}
+
+pub fn get_task(pid: usize) -> Option<Arc<TaskControlBlock>> {
+    return TASK_MANAGER.exclusive_access().get_task(pid);
+}
+
+pub fn remove_task(pid: usize) {
+    TASK_MANAGER.exclusive_access().remove_task(pid);
+}
+
+lazy_static! {
+    pub static ref TASK_MANAGER: UPSafeCell<TaskManager> =
+        unsafe { UPSafeCell::new(TaskManager::new()) };
+}
+
+pub struct TaskManager {
+    ready_tasks: BTreeMap<usize, Arc<TaskControlBlock>>
+}
+
+impl TaskManager {
+    fn new() -> Self {
+        Self {
+            ready_tasks: BTreeMap::new(),
+        }
+    }
+
+    fn add_task(&mut self, pid: usize, task: Arc<TaskControlBlock>) {
+        self.ready_tasks.insert(pid, task);
+    }
+
+    fn remove_task(&mut self, pid: usize) {
+        self.ready_tasks.remove(&pid);
+    }
+
+    fn get_task(&self, pid: usize) -> Option<Arc<TaskControlBlock>> {
+        self.ready_tasks.get(&pid).map(Arc::clone)
+    }
+}
+
+pub struct TaskControlBlock {
     // immutable
-    pub pid: PidWrapper,
+    pub pid: usize,
     pub kernel_stack: KernelStack,
     // mutable
-    pub inner: UPSafeCell<ProcessControlBlockInner>,
+    pub inner: UPSafeCell<TaskControlBlockInner>,
 }
 
 // to implement inner mutability of a immutable reference
-pub struct ProcessControlBlockInner {
-    pub status: ProcessStatus,
+pub struct TaskControlBlockInner {
     pub task_ctx: TaskContext,
     pub trap_ctx_ppn: PPN,
     pub address_space: AddressSpace,
     pub heap_bottom: usize,
-    pub program_brk: usize,                     // heap top
-    pub parent: Option<Weak<ProcessControlBlock>>, // Weak reference won't add reference count
-    pub children: Vec<Arc<ProcessControlBlock>>, // when the reference cnt of Arc = 0, it will be recycleed. Any task can't exist if there is no reference from parent (except the init task).
+    pub program_brk: usize, // heap top
     pub user_stack_start: usize,
-    pub exit_code: i32,
 }
 
-impl ProcessControlBlock {
-    pub fn new(elf_data: &[u8]) -> Self {
+impl TaskControlBlock {
+    pub fn new(elf_data: &[u8], pid: usize) -> Self {
+
         // build user space, and get trap context ppn, sp of user stack
         let (user_space, user_sp, elf_entry_point) = user_space_from_elf(elf_data);
         let trap_ctx_ppn = user_space
             .translate(VirtAddr::from(TRAP_CONTEXT_START_VA).to_down_vpn())
             .unwrap();
 
-        // alloctate pid
-        let pid = pid_alloc();
-        let pid_numer = pid.0;
         // allocate kernel stack
-        let kernel_stack = KernelStack::new(&pid);
+        let kernel_stack = KernelStack::new(pid);
         let kernel_stack_top = kernel_stack.get_top();
 
         let task_context: TaskContext = TaskContext::new(kernel_stack_top);
@@ -59,17 +94,13 @@ impl ProcessControlBlock {
             pid,
             kernel_stack,
             inner: unsafe {
-                UPSafeCell::new(ProcessControlBlockInner {
+                UPSafeCell::new(TaskControlBlockInner {
                     trap_ctx_ppn,
                     user_stack_start: user_sp.into(),
                     heap_bottom: user_sp.into(),
                     program_brk: user_sp.into(),
                     task_ctx: task_context,
-                    status: ProcessStatus::Ready,
                     address_space: user_space,
-                    parent: None,
-                    children: Vec::new(),
-                    exit_code: 0,
                 })
             },
         };
@@ -85,18 +116,14 @@ impl ProcessControlBlock {
         );
 
         println!(
-            "process {} created, entry va = {:#x}",
-            pid_numer, elf_entry_point
+            "task {} created, entry va = {:#x}",
+            pid, elf_entry_point
         );
         task_control_block
     }
 
-    pub fn get_pid(&self) -> usize {
-        self.pid.0
-    }
-
-    pub fn fork(self: &Arc<ProcessControlBlock>) -> Arc<ProcessControlBlock> {
-        let mut parent_inner = self.inner.exclusive_access();
+    pub fn fork(self: &Arc<TaskControlBlock>, child_pid: usize) -> Arc<TaskControlBlock> {
+        let parent_inner = self.inner.exclusive_access();
 
         // copy address space and get new trap context ppn
         let child_address_space = copy_address_space(&parent_inner.address_space);
@@ -105,8 +132,7 @@ impl ProcessControlBlock {
             .unwrap();
 
         // allocate pid and kernel stack
-        let child_pid = pid_alloc();
-        let child_kernel_stack = KernelStack::new(&child_pid);
+        let child_kernel_stack = KernelStack::new(child_pid);
         let child_kernel_stack_top = child_kernel_stack.get_top();
 
         let child_task_context = TaskContext::new(child_kernel_stack_top);
@@ -115,22 +141,16 @@ impl ProcessControlBlock {
             pid: child_pid,
             kernel_stack: child_kernel_stack,
             inner: unsafe {
-                UPSafeCell::new(ProcessControlBlockInner {
+                UPSafeCell::new(TaskControlBlockInner {
                     trap_ctx_ppn: child_trap_ctx_ppn,
                     user_stack_start: parent_inner.user_stack_start,
                     heap_bottom: parent_inner.heap_bottom,
                     program_brk: parent_inner.program_brk,
                     task_ctx: child_task_context,
-                    status: ProcessStatus::Ready,
                     address_space: child_address_space,
-                    parent: Some(Arc::downgrade(self)),
-                    children: Vec::new(),
-                    exit_code: 0,
                 })
             },
         });
-
-        parent_inner.children.push(child_task_control_block.clone());
 
         // only need to change kernel stack top, other info have been copyed when copy address space
         child_task_control_block
@@ -160,9 +180,13 @@ impl ProcessControlBlock {
             trap_handler as usize,
         );
     }
+
+    pub fn get_pid(&self) -> usize {
+        self.pid
+    }
 }
 
-impl ProcessControlBlockInner {
+impl TaskControlBlockInner {
     fn set_trap_ctx(
         &self,
         entry: usize, // entry point of the app after trap
@@ -186,10 +210,6 @@ impl ProcessControlBlockInner {
     pub fn get_trap_ctx(&self) -> &'static mut TrapContext {
         let ctx_addr: PhyAddr = self.trap_ctx_ppn.into();
         return unsafe { (ctx_addr.0 as *mut TrapContext).as_mut().unwrap() };
-    }
-
-    pub fn has_exited(&self) -> bool {
-        return self.status == ProcessStatus::Exited
     }
 
     /// change the location of the program break. return None if failed.
@@ -220,8 +240,11 @@ impl ProcessControlBlockInner {
 }
 
 lazy_static! {
-    pub static ref INITPROC: Arc<ProcessControlBlock> = Arc::new({
+    pub static ref INIT_TASK: Arc<TaskControlBlock> = Arc::new({
         let data = open_app_file("initproc").unwrap();
-        ProcessControlBlock::new(data)
+        let pid = init_process();
+        TaskControlBlock::new(data, pid)
     });
 }
+
+

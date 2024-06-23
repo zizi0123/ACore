@@ -108,4 +108,8 @@ pub fn waitpid(pid: usize, exit_code: &mut i32) -> isize {
     }
 }
 
+pub fn pm_service(result1: isize, result2: usize, arg: &mut i32) -> isize {
+    return sys_pm_service(result1, result2, arg as *mut _);
+}
+
 

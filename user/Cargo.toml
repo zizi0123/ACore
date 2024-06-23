@@ -9,3 +9,6 @@ edition = "2021"
 
 [dependencies]
 allocator = { path = "../allocator" }
+sync = { path = "../sync" }
+lazy_static = { version = "1.4.0", features = ["spin_no_std"] }
+

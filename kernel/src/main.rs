@@ -31,7 +31,7 @@ mod time;
 use core::arch::global_asm;
 //使用第三方包 riscv 提供的寄存器定义
 use riscv::register::*;
-use process::{process_manager, scheduler};
+use process::{task_manager, scheduler};
 use core::arch::asm;
 use process::loader;
 
@@ -86,7 +86,7 @@ extern "C" fn rust_main() -> ! {
 
     mem::init();
 
-    process_manager::init();
+    task_manager::init();
 
     loader::init();
 

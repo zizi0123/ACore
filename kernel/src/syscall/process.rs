@@ -1,27 +1,25 @@
 // syscalss about process management
 
-use alloc::sync::Arc;
-
-use crate::process::scheduler::{change_program_brk, exit_current_and_run_next, get_current_satp, get_current_task, get_pid, suspend_current_and_run_next};
+use crate::process::scheduler::{change_program_brk, exit_current_and_run_next, fork_process, waitpid_process, get_current_satp, get_current_task, get_pid, suspend_current_and_run_next};
+use crate::process::task_manager::{add_task, remove_task};
 use crate::time::get_time_ms;
-use crate::process::process_manager::add_task;
 use crate::mem::page_table;
 use crate::process::loader::open_app_file;
-use crate::config::{GREEN, RED, RESET};
+use crate::config::{GREEN, RESET};
 
 pub fn sys_fork() -> isize {
     let current_task = get_current_task();
-    let new_task = current_task.fork();
-    let new_pid = new_task.get_pid();
+    let child_pid = fork_process();
+    let child_task = current_task.fork(child_pid);
 
     // set the return value of child process to 0
-    let trap_cx = new_task.inner.exclusive_access().get_trap_ctx();
+    let trap_cx = child_task.inner.exclusive_access().get_trap_ctx();
     trap_cx.x[10] = 0;
 
     // add new task to scheduler
-    add_task(new_task);
+    add_task(child_pid, child_task);
 
-    return new_pid as isize;
+    return child_pid as isize;
 }
 
 // return 0 if success, -1 if no such file.
@@ -30,7 +28,7 @@ pub fn sys_exec(path: *const u8) -> isize {
     let app_name = page_table::get_string(satp, path);
     if let Some(data) = open_app_file(app_name.as_str()) {
         let task = get_current_task();
-        println!("{}[kernel] exec app: {}, pid = {}{}", GREEN, app_name, task.pid.0, RESET);
+        println!("{}[kernel] exec app: {}, pid = {}{}", GREEN, app_name, task.pid, RESET);
         task.exec(data);
         0
     } else {
@@ -42,34 +40,15 @@ pub fn sys_exec(path: *const u8) -> isize {
 // child process is still running -> -2.
 // else -> pid, and exit code of child process is kept in exit_code_ptr.
 pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
-    let task = get_current_task();
-    let mut inner = task.inner.exclusive_access();
-
-    // no such child process
-    if !inner
-        .children
-        .iter()
-        .any(|p| pid == -1 || pid as usize == p.get_pid())
-    {
-        return -1;
+    let current_task = get_current_task();
+    let cur_task_inner = current_task.inner.exclusive_access();
+    let (pid, exit_code) = waitpid_process(pid);
+    if pid != -1 && pid != -2{
+        page_table::write_into(cur_task_inner.address_space.get_satp(), exit_code_ptr, exit_code as i32);
+        // remove task to release resources
+        remove_task(pid as usize);
     }
-
-    // find the exited child process
-    let pair = inner.children.iter().enumerate().find(|(_, p)| {
-        p.inner.exclusive_access().has_exited() && (pid == -1 || pid as usize == p.get_pid())
-    });
-    if let Some((idx, _)) = pair {
-        let child = inner.children.remove(idx);
-        // confirm that child will be deallocated after removing from children list
-        assert_eq!(Arc::strong_count(&child), 1);
-        let found_pid = child.get_pid();
-        let exit_code = child.inner.exclusive_access().exit_code;
-        page_table::write_into(inner.address_space.get_satp(), exit_code_ptr, exit_code);
-        return found_pid as isize
-    } else {
-        return -2;
-    }
-    // ---- release current PCB lock automatically
+    return pid;
 }
 
 pub fn sys_exit(exit_code: i32) -> ! {

@@ -1,6 +1,6 @@
 use crate::mem::page_table::physical_bytes_of_user_ptr;
 use crate::sbi;
-use crate::process::scheduler::{get_current_satp, suspend_current_and_run_next};
+use crate::process::scheduler::get_current_satp;
 use crate::config::{FD_STDOUT, FD_STDIN};
 
 // return the number of bytes written successfully
