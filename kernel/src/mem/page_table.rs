@@ -284,7 +284,6 @@ impl PageTable {
         let pte = self.find_and_alloc_pte(vpn).unwrap();
         assert!(!pte.is_valid(), "vpn {:#x} has been mapped already", vpn.0);
         *pte = PageTableEntry::new(ppn, flags | PTEFlags::V);
-        // println!("pte valid:{}, ppn:{:#x}, flags:{:#x}", pte.is_valid(), ppn.0, flags.bits);
     }
 
     //allocate a physical frame for virtual page, and construct map between vpn and ppn 

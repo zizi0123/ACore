@@ -8,13 +8,16 @@ use crate::process::loader::open_app_file;
 use crate::config::{GREEN, RESET};
 
 pub fn sys_fork() -> isize {
+    println!("{}[kernel] fork a new process{}", GREEN, RESET);
     let current_task = get_current_task();
     let child_pid = fork_process();
     let child_task = current_task.fork(child_pid);
 
     // set the return value of child process to 0
-    let trap_cx = child_task.inner.exclusive_access().get_trap_ctx();
+    let child_inner = child_task.inner.exclusive_access();
+    let trap_cx = child_inner.get_trap_ctx();
     trap_cx.x[10] = 0;
+    drop(child_inner);
 
     // add new task to scheduler
     add_task(child_pid, child_task);
@@ -41,13 +44,14 @@ pub fn sys_exec(path: *const u8) -> isize {
 // else -> pid, and exit code of child process is kept in exit_code_ptr.
 pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
     let current_task = get_current_task();
-    let cur_task_inner = current_task.inner.exclusive_access();
     let (pid, exit_code) = waitpid_process(pid);
+    let cur_task_inner = current_task.inner.exclusive_access();
     if pid != -1 && pid != -2{
         page_table::write_into(cur_task_inner.address_space.get_satp(), exit_code_ptr, exit_code as i32);
         // remove task to release resources
         remove_task(pid as usize);
     }
+    drop(cur_task_inner);
     return pid;
 }
 

@@ -1,7 +1,6 @@
 use super::context::TaskContext;
 use super::kernel_stack_alloc::KernelStack;
 use super::loader::open_app_file;
-use super::scheduler::init_process;
 use crate::config::TRAP_CONTEXT_START_VA;
 use crate::mem::address_space::{copy_address_space, user_space_from_elf, AddressSpace, KERNEL_SPACE};
 use crate::mem::page_table::{PhyAddr, VirtAddr, PPN};
@@ -11,9 +10,11 @@ use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 use sync::UPSafeCell;
 
+const INIT_PROC_PID: usize = 1; // pre-allocated pid for init process, to avoid call pm service in kernel thread
+
 pub fn init() {
-    add_task(INIT_TASK.get_pid(), INIT_TASK.clone());
-    println!("{}init process has been build and added to PM{}", GREEN, RESET);
+    add_task(INIT_PROC_PID, INIT_TASK.clone());
+    println!("{}INIT task: pid = {} has been build and added to task manager{}", GREEN, INIT_PROC_PID, RESET);
 }
 
 pub fn add_task(pid: usize, task: Arc<TaskControlBlock>) {
@@ -107,13 +108,15 @@ impl TaskControlBlock {
 
         // initiate trap context
         // when an app was initially built, the entry after trap is the entry point of the app
-        task_control_block.inner.exclusive_access().set_trap_ctx(
+        let task_inner = task_control_block.inner.exclusive_access();
+        task_inner.set_trap_ctx(
             elf_entry_point,
             user_sp.into(),
             KERNEL_SPACE.exclusive_access().get_satp(),
             kernel_stack_top,
             trap_handler as usize,
         );
+        drop(task_inner);
 
         println!(
             "task {} created, entry va = {:#x}",
@@ -151,6 +154,7 @@ impl TaskControlBlock {
                 })
             },
         });
+        drop(parent_inner);
 
         // only need to change kernel stack top, other info have been copyed when copy address space
         child_task_control_block
@@ -179,6 +183,7 @@ impl TaskControlBlock {
             self.kernel_stack.get_top(),
             trap_handler as usize,
         );
+        drop(inner);
     }
 
     pub fn get_pid(&self) -> usize {
@@ -242,8 +247,7 @@ impl TaskControlBlockInner {
 lazy_static! {
     pub static ref INIT_TASK: Arc<TaskControlBlock> = Arc::new({
         let data = open_app_file("initproc").unwrap();
-        let pid = init_process();
-        TaskControlBlock::new(data, pid)
+        TaskControlBlock::new(data, INIT_PROC_PID)
     });
 }
 

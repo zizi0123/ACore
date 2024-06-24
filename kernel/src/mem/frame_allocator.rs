@@ -52,6 +52,7 @@ impl FrameAllocator for StackFrameAllocator {
         if ppn >= self.start || self.recycled.iter().find(|&x| *x == ppn).is_some() {
             panic!("Frame ppn = {:#x} has not been allocated!", ppn.0);
         }
+        ppn.get_page().iter_mut().for_each(|x| *x = 0); //clear the page
         self.recycled.push(ppn);
     }
 }

@@ -2,7 +2,7 @@ use super::sys_yield;
 use crate::process::{
     context::TaskContext,
     scheduler::switch_in,
-    task_manager::{TaskControlBlock, INIT_TASK},
+    task_manager::TaskControlBlock,
 };
 use crate::{mem::page_table, process::scheduler::get_current_task};
 use alloc::sync::Arc;
@@ -10,26 +10,29 @@ use lazy_static::lazy_static;
 use sync::UPSafeCell;
 
 const PM_NONE: usize = 0;
-const PM_INIT: usize = 1;
 const PM_FORK: usize = 2;
 const PM_WAITPID: usize = 3;
-const PM_SUSPEND: usize = 4;
-const PM_EXIT: usize = 5;
+const PM_SUSPEND_AND_RUN_NEXT: usize = 4;
+const PM_EXIT_AND_RUN_NEXT: usize = 5;
 const PM_FETCH: usize = 6;
 const BUSY: usize = 1;
 const IDLE: usize = 0;
 
 // this is modified by scheduler, to ask for pm service
 lazy_static! {
-    pub static ref PM_SERVICE: UPSafeCell<PmService> = unsafe { UPSafeCell::new(PmService::new()) };
+    pub static ref PM_SERVICE: UPSafeCell<PmService> = unsafe {
+           UPSafeCell::new(PmService::new())
+        };
 }
+
+
 pub struct PmService {
     pub ask_service_id: usize,
     pub result1: isize,
     pub result2: usize,
     pub service_status: usize,
     pub arg: i32,
-    pub user_tcb: Arc<TaskControlBlock>, // the user process that ask for pm service's task context
+    pub user_tcb: Option<Arc<TaskControlBlock>>, // the user process that ask for pm service's task context
 }
 
 impl PmService {
@@ -40,7 +43,7 @@ impl PmService {
             arg: 0,
             result1: 0,
             result2: 0,
-            user_tcb: INIT_TASK.clone(), // random init
+            user_tcb: None,
         }
     }
 }
@@ -54,11 +57,10 @@ pub fn process_manager_syscall(result1: isize, result2: usize, arg: *mut i32) ->
             pm_service.ask_service_id = PM_NONE;
             pm_service.result1 = result1;
             pm_service.result2 = result2;
-            let mut task_inner = pm_service.user_tcb.inner.exclusive_access();
-            let task_ctx_ptr = &mut task_inner.task_ctx as *mut TaskContext;
-
             // switch back to user process, but not yield
-            switch_in(task_ctx_ptr);
+            let origin_task = pm_service.user_tcb.take().unwrap();
+            drop(pm_service);
+            switch_in(origin_task);
             continue;
         } else {
             let serice_id = pm_service.ask_service_id;
@@ -67,11 +69,12 @@ pub fn process_manager_syscall(result1: isize, result2: usize, arg: *mut i32) ->
                     drop(pm_service);
                     sys_yield();
                 }
-                PM_INIT | PM_FORK | PM_SUSPEND | PM_FETCH => {
+                PM_FORK | PM_SUSPEND_AND_RUN_NEXT | PM_FETCH => {
                     pm_service.service_status = BUSY;
+                    drop(pm_service);
                     return serice_id as isize;
                 }
-                PM_WAITPID | PM_EXIT => {
+                PM_WAITPID | PM_EXIT_AND_RUN_NEXT => {
                     pm_service.service_status = BUSY;
                     let current_task = get_current_task();
                     let cur_task_inner = current_task.inner.exclusive_access();
@@ -80,6 +83,8 @@ pub fn process_manager_syscall(result1: isize, result2: usize, arg: *mut i32) ->
                         arg,
                         pm_service.arg,
                     );
+                    drop(pm_service);
+                    drop(cur_task_inner);
                     return serice_id as isize;
                 }
                 _ => {

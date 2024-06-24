@@ -79,7 +79,7 @@ impl Section {
 }
 
 fn copy_section(section: &Section, new_address_space: &mut AddressSpace) -> Section {
-    // copy section info, except for v2p
+    println!("copy section: vpn range [{:#x}, {:#x})", section.start.0, section.end.0);
     let mut new_section = Section::new(
         section.start.into(),
         section.end.into(),
@@ -158,6 +158,8 @@ impl AddressSpace {
             .find(|(_, section)| section.start == start.to_down_vpn())
             .unwrap();
         for vpn in section.start..section.end {
+            let ppn = self.page_table.translate(vpn).unwrap();
+            ppn.get_page().iter_mut().for_each(|x| *x = 0); // clear the page
             self.page_table.unmap(vpn);
         }
         if section.map_type == MapType::Framed {
@@ -496,7 +498,6 @@ pub fn user_space_from_elf(elf_data: &[u8]) -> (AddressSpace, VirtAddr, usize) {
 }
 
 pub fn copy_address_space(parent_address_space: &AddressSpace) -> AddressSpace {
-    // println!("start copy address space!");
     let mut address_space = AddressSpace::new();
     address_space.map_trampoline();
     // println!("finish map trampoline");
